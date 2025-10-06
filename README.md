@@ -1,18 +1,12 @@
-# Welcome to your Lovable project
+# Welcome to my Talk With you project
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/941e3966-4706-424d-8e1e-03caf5db16de
+**URL**: https://talk-with-you.vercel.app/
 
 ## How can I edit this code?
 
 There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/941e3966-4706-424d-8e1e-03caf5db16de) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
 
 **Use your preferred IDE**
 
@@ -62,12 +56,6 @@ This project is built with:
 
 ## How can I deploy this project?
 
-Simply open [Lovable](https://lovable.dev/projects/941e3966-4706-424d-8e1e-03caf5db16de) and click on Share -> Publish.
+Simply open [vercel](https://vercel.com/) and click on Share -> Publish.
 
-## Can I connect a custom domain to my Lovable project?
 
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
