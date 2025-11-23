@@ -197,40 +197,100 @@ const MessageInput = ({
   const isNearLimit = characterCount > 900;
 
   return (
+    <div className="p-4 border-t border-border bg-background/50 backdrop-blur-sm">
+      <form onSubmit={handleSubmit} className="space-y-2">
+        {/* Error message display */}
+        {(submitError || validationError) && (
+          <div
+            className={cn(
+              "flex items-center gap-2 text-sm px-3 py-2 rounded-lg border",
+              submitError
+                ? "bg-destructive/10 text-destructive border-destructive/20"
+                : "bg-muted/50 text-foreground border-border"
+            )}
+            role="alert"
+            aria-live="polite"
+          >
+            <AlertCircle className="h-4 w-4 flex-shrink-0" />
+            <span className="text-sm">{submitError || validationError}</span>
+          </div>
+        )}
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit(e);
-    }
-  };
+        {/* Rate limit indicator */}
+        {rateLimitRemaining > 0 && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-1">
+            <span>Rate limited. Please wait {rateLimitRemaining} second{rateLimitRemaining > 1 ? 's' : ''}.</span>
+          </div>
+        )}
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(e.target.value);
-    onTyping();
-  };
+        {/* Main input area */}
+        <div className="flex gap-2">
+          <div className="flex-1 relative">
+            <Textarea
+              value={message}
+              onChange={handleChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message... (Enter to send, Shift+Enter for new line, Escape to clear)"
+              className={cn(
+                "min-h-[60px] max-h-[120px] resize-none pr-12 bg-background/50 backdrop-blur-sm border-border/50 focus:border-primary/50",
+                validationError && "border-destructive/50 focus:border-destructive/50",
+                isNearLimit && "border-yellow-500/50"
+              )}
+              maxLength={1000}
+              disabled={isSubmitting}
+              aria-label="Message input"
+              aria-describedby={validationError ? "message-error" : undefined}
+              aria-invalid={!!validationError}
+            />
 
-  return (
-    <form onSubmit={handleSubmit} className="p-4">
-      <div className="flex gap-2">
-        <Textarea
-          value={message}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
-          className="min-h-[60px] max-h-[120px] resize-none bg-background/50 backdrop-blur-sm"
-          maxLength={1000}
-        />
-        <Button
-          type="submit"
-          size="icon"
-          className="h-[60px] w-[60px] bg-primary hover:bg-primary/90 shrink-0"
-          disabled={!messageSchema.safeParse(message).success}
-        >
-          <Send className="h-5 w-5" />
-        </Button>
-      </div>
-    </form>
+            {/* Character count indicator */}
+            <div
+              className={cn(
+                "absolute bottom-2 right-2 text-xs",
+                isNearLimit
+                  ? "text-yellow-500 font-medium"
+                  : characterCount > 0
+                  ? "text-muted-foreground"
+                  : "text-muted-foreground/50"
+              )}
+              aria-label={`${characterCount} of 1000 characters`}
+            >
+              {characterCount}/1000
+            </div>
+          </div>
+
+          <Button
+            type="submit"
+            size="icon"
+            className={cn(
+              "h-[60px] w-[60px] shrink-0 transition-all duration-200",
+              isDisabled
+                ? "bg-muted hover:bg-muted cursor-not-allowed opacity-50"
+                : "bg-primary hover:bg-primary/90 active:scale-95",
+              isSubmitting && "animate-pulse"
+            )}
+            disabled={isDisabled}
+            aria-label={isSubmitting ? "Sending message..." : "Send message"}
+            title={validationError || (rateLimitRemaining > 0 ? `Rate limited (${rateLimitRemaining}s)` : "Send message (Enter)")}
+          >
+            {isSubmitting ? (
+              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
+            ) : (
+              <Send className="h-5 w-5" />
+            )}
+          </Button>
+        </div>
+
+        {/* Help text */}
+        <div className="text-xs text-muted-foreground px-1">
+          <span>
+            Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Enter</kbd> to send,
+            <kbd className="px-1 py-0.5 bg-muted rounded text-xs ml-1">Shift+Enter</kbd> for new line,
+            <kbd className="px-1 py-0.5 bg-muted rounded text-xs ml-1">Esc</kbd> to clear
+          </span>
+        </div>
+      </form>
+    </div>
   );
 };
 
