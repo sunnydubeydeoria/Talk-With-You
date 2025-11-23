@@ -38,7 +38,7 @@ const ChatRoom = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const username = location.state?.username;
   const [roomName, setRoomName] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -46,9 +46,152 @@ const ChatRoom = () => {
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const [copied, setCopied] = useState(false);
   const [showUsers, setShowUsers] = useState(true);
-  
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [messageIds, setMessageIds] = useState<Set<string>>(new Set()); // For deduplication
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionRetryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const subscriptionRef = useRef<{ messages: any; participants: any; typing: any } | null>(null);
+
+  // Memoized values to prevent unnecessary recalculations
+  const memoizedParticipants = useMemo(() => participants, [participants]);
+  const memoizedTypingUsers = useMemo(() => typingUsers.filter(u => u.username !== username), [typingUsers, username]);
+
+  // Connection health monitoring
+  const checkConnection = useCallback(async () => {
+    const healthy = await isSupabaseHealthy();
+    setIsOnline(healthy);
+
+    if (!healthy) {
+      // Schedule retry
+      connectionRetryTimeoutRef.current = setTimeout(() => {
+        checkConnection();
+      }, CONNECTION_RETRY_DELAY);
+    }
+
+    return healthy;
+  }, []);
+
+  // Add participant with retry logic
+  const addParticipant = useCallback(async () => {
+    if (!roomId || !username) return;
+
+    try {
+      await withRetry(async () => {
+        const { error } = await supabase
+          .from("room_participants")
+          .upsert({
+            room_id: roomId,
+            username,
+            joined_at: new Date().toISOString()
+          }, {
+            onConflict: "room_id,username"
+          });
+
+        if (error) throw error;
+      });
+    } catch (error) {
+      console.error('Failed to add participant:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to join room. Please check your connection.",
+        variant: "destructive",
+      });
+    }
+  }, [roomId, username, toast]);
+
+  // Optimized message loading with pagination
+  const loadMessages = useCallback(async (page = 0, append = false) => {
+    if (!roomId || (!append && !hasMoreMessages)) return;
+
+    try {
+      setIsLoadingMore(true);
+
+      const { data: messagesData, error } = await withRetry(async () => {
+        return await supabase
+          .from("messages")
+          .select("*")
+          .eq("room_id", roomId)
+          .order("created_at", { ascending: false })
+          .range(page * MESSAGES_PER_PAGE, (page + 1) * MESSAGES_PER_PAGE - 1);
+      });
+
+      if (error) throw error;
+
+      if (messagesData) {
+        // Deduplicate messages
+        const newMessages = messagesData.reverse().filter(
+          message => !messageIds.has(message.id)
+        );
+
+        if (append) {
+          setMessages(prev => [...newMessages, ...prev]);
+        } else {
+          setMessages(newMessages);
+        }
+
+        // Update message IDs set
+        setMessageIds(prev => {
+          const newSet = new Set(prev);
+          newMessages.forEach(msg => newSet.add(msg.id));
+          return newSet;
+        });
+
+        // Check if there are more messages
+        setHasMoreMessages(messagesData.length === MESSAGES_PER_PAGE);
+      }
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load messages. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [roomId, messageIds, hasMoreMessages, toast]);
+
+  // Load initial room data with connection check
+  const loadRoomData = useCallback(async () => {
+    if (!roomId) return;
+
+    try {
+      await withRetry(async () => {
+        // Load room info
+        const { data: room } = await supabase
+          .from("rooms")
+          .select("name")
+          .eq("id", roomId)
+          .single();
+
+        if (room) setRoomName(room.name);
+
+        // Load participants
+        const { data: participantsData } = await supabase
+          .from("room_participants")
+          .select("*")
+          .eq("room_id", roomId)
+          .order("joined_at", { ascending: true });
+
+        if (participantsData) setParticipants(participantsData);
+
+        // Load initial messages
+        await loadMessages(0, false);
+      });
+    } catch (error) {
+      console.error('Failed to load room data:', error);
+      toast({
+        title: "Connection Error",
+        description: "Failed to load room data. Please check your connection.",
+        variant: "destructive",
+      });
+    }
+  }, [roomId, loadMessages, toast]);
 
   useEffect(() => {
     if (!username || !roomId) {
