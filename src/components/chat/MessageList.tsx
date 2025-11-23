@@ -103,38 +103,60 @@ const MessageList = ({ messages, currentUsername }: MessageListProps) => {
         {messages.map((message) => {
           const isOwnMessage = message.username === currentUsername;
           const userColor = getUserColor(message.username);
+          const { html: messageHtml, plainText } = formatMessageContent(message.content);
 
           return (
-            <div
+            <article
               key={message.id}
               className={`flex gap-3 ${isOwnMessage ? "flex-row-reverse" : ""} animate-fade-in`}
+              role="article"
+              aria-label={`Message from ${message.username} at ${format(new Date(message.created_at), "HH:mm")}`}
             >
-              <Avatar className="h-10 w-10 ring-2 ring-offset-2 ring-offset-background" style={{ borderColor: userColor }}>
+              <Avatar
+                className="h-10 w-10 ring-2 ring-offset-2 ring-offset-background"
+                style={{ borderColor: userColor }}
+                aria-label={`${message.username}'s avatar`}
+              >
                 <AvatarFallback style={{ backgroundColor: userColor }}>
                   {getInitials(message.username)}
                 </AvatarFallback>
               </Avatar>
 
               <div className={`flex flex-col gap-1 max-w-[70%] ${isOwnMessage ? "items-end" : ""}`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium" style={{ color: userColor }}>
-                    {message.username}
+                <header className="flex items-center gap-2">
+                  <span
+                    className="text-sm font-medium"
+                    style={{ color: userColor }}
+                    aria-label={`Username: ${message.username}`}
+                  >
+                    {escapeHtml(message.username)}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <time
+                    className="text-xs text-muted-foreground"
+                    dateTime={message.created_at}
+                    aria-label={`Sent at ${format(new Date(message.created_at), "HH:mm")}`}
+                  >
                     {format(new Date(message.created_at), "HH:mm")}
-                  </span>
-                </div>
+                  </time>
+                </header>
                 <div
                   className={`px-4 py-2 rounded-2xl backdrop-blur-sm ${
                     isOwnMessage
                       ? "bg-primary/20 rounded-tr-sm"
                       : "bg-muted/50 rounded-tl-sm"
                   }`}
+                  role="document"
+                  aria-label="Message content"
                 >
-                  <p className="text-sm break-words whitespace-pre-wrap">{message.content}</p>
+                  <div
+                    className="text-sm break-words whitespace-pre-wrap prose prose-sm max-w-none"
+                    dangerouslySetInnerHTML={{ __html: messageHtml }}
+                  />
+                  {/* Fallback plain text for screen readers */}
+                  <div className="sr-only">{plainText}</div>
                 </div>
               </div>
-            </div>
+            </article>
           );
         })}
       </div>
