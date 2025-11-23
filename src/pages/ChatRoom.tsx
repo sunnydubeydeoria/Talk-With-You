@@ -459,175 +459,65 @@ const ChatRoom = () => {
     };
   }, [roomId, username, navigate, checkConnection, addParticipant, loadRoomData, subscribeToMessages, subscribeToParticipants, subscribeToTyping, processOfflineQueue]);
 
+  // Auto-scroll to bottom with optimization
+  const scrollToBottom = useCallback(() => {
+    // Only scroll if user is at bottom (avoid interrupting manual scrolling)
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+
+      if (isNearBottom) {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+  }, []);
+
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, scrollToBottom]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  const loadRoomData = async () => {
-    if (!roomId) return;
-
-    // Load room info
-    const { data: room } = await supabase
-      .from("rooms")
-      .select("name")
-      .eq("id", roomId)
-      .single();
-
-    if (room) setRoomName(room.name);
-
-    // Load messages
-    const { data: messagesData } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("room_id", roomId)
-      .order("created_at", { ascending: true });
-
-    if (messagesData) setMessages(messagesData);
-
-    // Load participants
-    const { data: participantsData } = await supabase
-      .from("room_participants")
-      .select("*")
-      .eq("room_id", roomId)
-      .order("joined_at", { ascending: true });
-
-    if (participantsData) setParticipants(participantsData);
-  };
-
-  const subscribeToMessages = () => {
-    const channel = supabase
-      .channel(`messages:${roomId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "messages",
-          filter: `room_id=eq.${roomId}`,
-        },
-        (payload) => {
-          setMessages((prev) => [...prev, payload.new as Message]);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  };
-
-  const subscribeToParticipants = () => {
-    const channel = supabase
-      .channel(`participants:${roomId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "room_participants",
-          filter: `room_id=eq.${roomId}`,
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            setParticipants((prev) => [...prev, payload.new as Participant]);
-          } else if (payload.eventType === "DELETE") {
-            setParticipants((prev) =>
-              prev.filter((p) => p.id !== (payload.old as Participant).id)
-            );
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  };
-
-  const subscribeToTyping = () => {
-    const channel = supabase
-      .channel(`typing:${roomId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "typing_indicators",
-          filter: `room_id=eq.${roomId}`,
-        },
-        (payload) => {
-          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            const indicator = payload.new as { username: string; is_typing: boolean };
-            if (indicator.is_typing && indicator.username !== username) {
-              setTypingUsers((prev) => {
-                const exists = prev.find((u) => u.username === indicator.username);
-                if (!exists) return [...prev, { username: indicator.username }];
-                return prev;
-              });
-            } else {
-              setTypingUsers((prev) =>
-                prev.filter((u) => u.username !== indicator.username)
-              );
-            }
-          } else if (payload.eventType === "DELETE") {
-            const indicator = payload.old as { username: string };
-            setTypingUsers((prev) =>
-              prev.filter((u) => u.username !== indicator.username)
-            );
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  };
-
-  const handleSendMessage = async (content: string) => {
-    if (!roomId || !username) return;
-
-    const { error } = await supabase
-      .from("messages")
-      .insert({ room_id: roomId, username, content });
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to send message",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleTyping = async () => {
-    if (!roomId || !username) return;
+  // Optimized typing indicator with debouncing
+  const handleTyping = useCallback(async () => {
+    if (!roomId || !username || !isOnline) return;
 
     // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set typing indicator
-    await supabase
-      .from("typing_indicators")
-      .upsert(
-        { room_id: roomId, username, is_typing: true, updated_at: new Date().toISOString() },
-        { onConflict: "room_id,username" }
-      );
+    try {
+      // Set typing indicator
+      await withRetry(async () => {
+        return await supabase
+          .from("typing_indicators")
+          .upsert(
+            {
+              room_id: roomId,
+              username,
+              is_typing: true,
+              updated_at: new Date().toISOString()
+            },
+            { onConflict: "room_id,username" }
+          );
+      });
+    } catch (error) {
+      console.error('Failed to set typing indicator:', error);
+    }
 
-    // Clear typing after 2 seconds of inactivity
+    // Clear typing after timeout
     typingTimeoutRef.current = setTimeout(async () => {
-      await supabase
-        .from("typing_indicators")
-        .delete()
-        .match({ room_id: roomId, username });
-    }, 2000);
-  };
+      try {
+        await withRetry(async () => {
+          return await supabase
+            .from("typing_indicators")
+            .delete()
+            .match({ room_id: roomId, username });
+        });
+      } catch (error) {
+        console.error('Failed to clear typing indicator:', error);
+      }
+    }, TYPING_TIMEOUT);
+  }, [roomId, username, isOnline]);
 
   const copyRoomId = () => {
     if (roomId) {
