@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, Copy, Users as UsersIcon, Check, WifiOff } from "lucide-react";
+import { cn } from "@/lib/utils";
 import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import UsersList from "@/components/chat/UsersList";
