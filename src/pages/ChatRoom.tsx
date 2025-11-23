@@ -27,6 +27,12 @@ interface TypingUser {
   username: string;
 }
 
+// Constants for optimization
+const MESSAGES_PER_PAGE = 50;
+const TYPING_TIMEOUT = 2000;
+const OFFLINE_MESSAGE_QUEUE_KEY = 'chatsphere_offline_messages';
+const CONNECTION_RETRY_DELAY = 3000;
+
 const ChatRoom = () => {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
