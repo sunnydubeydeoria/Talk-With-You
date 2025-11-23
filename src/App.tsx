@@ -52,6 +52,7 @@ const RouteErrorBoundary = memo(({ children }: { children: React.ReactNode }) =>
 
 RouteErrorBoundary.displayName = 'RouteErrorBoundary';
 
+// Enhanced QueryClient with performance optimizations
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -64,15 +65,35 @@ const queryClient = new QueryClient({
         return failureCount < 3;
       },
       staleTime: 5 * 60 * 1000, // 5 minutes
+      cacheTime: 10 * 60 * 1000, // 10 minutes
       refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
+      networkMode: 'online', // Only fetch when online
     },
     mutations: {
       retry: 1,
+      networkMode: 'online',
     },
   },
+  // Enable query deduplication and other performance features
+  queryCache: new QueryCache({
+    onError: (error) => {
+      console.error('Query error:', error);
+    },
+    onSuccess: () => {
+      // Optional: Log successful queries for debugging
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      console.error('Mutation error:', error);
+    },
+  }),
 });
 
-const App = () => (
+// Memoized App component to prevent unnecessary re-renders
+const App = memo(() => (
   <ErrorBoundary
     onError={(error, errorInfo) => {
       // Custom error handling for the entire app
@@ -83,59 +104,73 @@ const App = () => (
     }}
   >
     <QueryClientProvider client={queryClient}>
-      <ErrorBoundary fallback={<div>Query client error occurred</div>}>
+      <RouteErrorBoundary fallback={<div>Query client error occurred</div>}>
         <TooltipProvider>
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <Routes>
-              <Route
-                path="/"
-                element={
-                  <ErrorBoundary>
-                    <Index />
-                  </ErrorBoundary>
-                }
-              />
-              <Route
-                path="/create-room"
-                element={
-                  <ErrorBoundary>
-                    <CreateRoom />
-                  </ErrorBoundary>
-                }
-              />
-              <Route
-                path="/join-room"
-                element={
-                  <ErrorBoundary>
-                    <JoinRoom />
-                  </ErrorBoundary>
-                }
-              />
-              <Route
-                path="/room/:roomId"
-                element={
-                  <ErrorBoundary>
-                    <ChatRoom />
-                  </ErrorBoundary>
-                }
-              />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route
-                path="*"
-                element={
-                  <ErrorBoundary>
-                    <NotFound />
-                  </ErrorBoundary>
-                }
-              />
-            </Routes>
+            <Suspense fallback={<RouteLoader />}>
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <RouteErrorBoundary>
+                      <Suspense fallback={<RouteLoader />}>
+                        <Index />
+                      </Suspense>
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/create-room"
+                  element={
+                    <RouteErrorBoundary>
+                      <Suspense fallback={<RouteLoader />}>
+                        <CreateRoom />
+                      </Suspense>
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/join-room"
+                  element={
+                    <RouteErrorBoundary>
+                      <Suspense fallback={<RouteLoader />}>
+                        <JoinRoom />
+                      </Suspense>
+                    </RouteErrorBoundary>
+                  }
+                />
+                <Route
+                  path="/room/:roomId"
+                  element={
+                    <RouteErrorBoundary>
+                      <Suspense fallback={<RouteLoader />}>
+                        <ChatRoom />
+                      </Suspense>
+                    </RouteErrorBoundary>
+                  }
+                />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route
+                  path="*"
+                  element={
+                    <RouteErrorBoundary>
+                      <Suspense fallback={<RouteLoader />}>
+                        <NotFound />
+                      </Suspense>
+                    </RouteErrorBoundary>
+                  }
+                />
+              </Routes>
+            </Suspense>
           </BrowserRouter>
         </TooltipProvider>
-      </ErrorBoundary>
+      </RouteErrorBoundary>
     </QueryClientProvider>
   </ErrorBoundary>
-);
+));
+
+App.displayName = 'App';
 
 export default App;
