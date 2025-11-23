@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send } from "lucide-react";
+import { Send, AlertCircle } from "lucide-react";
 import { z } from "zod";
+import { cn } from "@/lib/utils";
 
 const messageSchema = z.string().trim().min(1).max(1000);
 
