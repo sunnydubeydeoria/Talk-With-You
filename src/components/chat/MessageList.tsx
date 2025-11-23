@@ -15,6 +15,68 @@ interface MessageListProps {
   currentUsername?: string;
 }
 
+// Security utilities for message content processing
+const sanitizeMessage = (content: string): string => {
+  return DOMPurify.sanitize(content, {
+    ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 'code', 'pre', 'a'],
+    ALLOWED_ATTR: ['href', 'title', 'target'],
+    ALLOW_DATA_ATTR: false,
+    FORBID_SCRIPT: true,
+    FORBID_TAGS: ['script', 'object', 'embed', 'iframe', 'form', 'input', 'button'],
+    FORBID_ATTR: ['onclick', 'onload', 'onerror', 'onmouseover', 'onfocus', 'onblur'],
+  });
+};
+
+const processLinks = (content: string): string => {
+  // Find and process URLs, making them safe links
+  const urlRegex = /(https?:\/\/[^\s<>"]+|www\.[^\s<>"]+)/g;
+  return content.replace(urlRegex, (url) => {
+    const fullUrl = url.startsWith('http') ? url : `https://${url}`;
+    // Basic URL validation
+    try {
+      const urlObj = new URL(fullUrl);
+      // Only allow http and https protocols
+      if (urlObj.protocol === 'http:' || urlObj.protocol === 'https:') {
+        return `<a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">${escapeHtml(url)}</a>`;
+      }
+    } catch {
+      // Invalid URL, return as-is
+    }
+    return escapeHtml(url);
+  });
+};
+
+const escapeHtml = (text: string): string => {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+};
+
+const processEmojis = (content: string): string => {
+  // Basic emoji support - preserve existing emojis
+  // You could integrate with a library like emoji-js here
+  return content;
+};
+
+const formatMessageContent = (content: string): { html: string; plainText: string } => {
+  // Sanitize content first
+  const sanitized = sanitizeMessage(content);
+
+  // Process links
+  const withLinks = processLinks(sanitized);
+
+  // Process emojis
+  const withEmojis = processEmojis(withLinks);
+
+  // Extract plain text for accessibility
+  const plainText = DOMPurify.sanitize(withEmojis, { ALLOWED_TAGS: [] });
+
+  return {
+    html: withEmojis,
+    plainText: plainText
+  };
+};
+
 const MessageList = ({ messages, currentUsername }: MessageListProps) => {
   const getInitials = (name: string) => {
     return name
