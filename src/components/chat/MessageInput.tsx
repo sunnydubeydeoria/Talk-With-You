@@ -157,15 +157,46 @@ const MessageInput = ({
     ]
   );
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const validation = messageSchema.safeParse(message);
-    if (!validation.success) return;
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    } else if (e.key === "Escape") {
+      setMessage("");
+      setSubmitError(null);
+    }
+  }, [handleSubmit]);
 
-    onSend(validation.data);
-    setMessage("");
-  };
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setMessage(newValue.slice(0, 1000)); // Enforce max length
+    setSubmitError(null);
+
+    // Trigger typing indicator with debounce
+    if (newValue.trim()) {
+      onTyping();
+    }
+  }, [onTyping]);
+
+  // Cleanup timeouts on unmount
+  const cleanup = useCallback(() => {
+    if (rateLimitTimeoutRef.current) {
+      clearTimeout(rateLimitTimeoutRef.current);
+      rateLimitTimeoutRef.current = null;
+    }
+  }, []);
+
+  // Add cleanup effect
+  React.useEffect(() => {
+    return cleanup;
+  }, [cleanup]);
+
+  const validationError = getValidationError(message);
+  const isDisabled = isSubmitting || !!rateLimitRemaining || !!validationError;
+  const characterCount = message.length;
+  const isNearLimit = characterCount > 900;
+
+  return (
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
