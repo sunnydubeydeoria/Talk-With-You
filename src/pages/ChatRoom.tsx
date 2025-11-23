@@ -541,11 +541,33 @@ const ChatRoom = () => {
               variant="ghost"
               size="icon"
               onClick={() => navigate("/")}
+              aria-label="Go back"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <div>
-              <h1 className="text-xl font-bold">{roomName}</h1>
+            <div className="flex-1">
+              <div className="flex items-center gap-3">
+                <h1 className="text-xl font-bold">{roomName || 'Chat Room'}</h1>
+                {/* Connection Status Indicator */}
+                <div className="flex items-center gap-1 text-sm">
+                  <div
+                    className={cn(
+                      "w-2 h-2 rounded-full",
+                      isOnline ? "bg-green-500" : "bg-red-500 animate-pulse"
+                    )}
+                    aria-hidden="true"
+                  />
+                  <span className={cn(
+                    "text-xs",
+                    isOnline ? "text-green-500" : "text-red-500"
+                  )}>
+                    {isOnline ? "Online" : "Offline"}
+                  </span>
+                  {!isOnline && (
+                    <WifiOff className="h-3 w-3 text-red-500" aria-hidden="true" />
+                  )}
+                </div>
+              </div>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span className="font-mono text-xs">{roomId}</span>
                 <Button
@@ -553,6 +575,7 @@ const ChatRoom = () => {
                   size="sm"
                   onClick={copyRoomId}
                   className="h-6 px-2"
+                  aria-label={copied ? "Room ID copied" : "Copy room ID"}
                 >
                   {copied ? (
                     <Check className="h-3 w-3" />
@@ -563,15 +586,23 @@ const ChatRoom = () => {
               </div>
             </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowUsers(!showUsers)}
-            className="md:hidden"
-          >
-            <UsersIcon className="h-4 w-4 mr-2" />
-            {participants.length}
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* Participants count */}
+            <div className="hidden md:flex items-center gap-1 text-sm text-muted-foreground">
+              <UsersIcon className="h-4 w-4" />
+              <span>{memoizedParticipants.length}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowUsers(!showUsers)}
+              className="md:hidden"
+              aria-label={`Toggle users list (${participants.length} users)`}
+            >
+              <UsersIcon className="h-4 w-4 mr-2" />
+              {participants.length}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -579,18 +610,71 @@ const ChatRoom = () => {
       <div className="flex-1 flex overflow-hidden max-w-7xl w-full mx-auto">
         {/* Messages Area */}
         <div className="flex-1 flex flex-col p-4">
-          <Card className="flex-1 bg-card/50 backdrop-blur-md border-border/50 flex flex-col overflow-hidden">
-            <MessageList messages={messages} currentUsername={username} />
-            <TypingIndicator typingUsers={typingUsers} />
-            <div ref={messagesEndRef} />
+          <Card className="flex-1 bg-card/50 backdrop-blur-md border-border/50 flex flex-col overflow-hidden relative">
+            {/* Connection Status Banner */}
+            {!isOnline && (
+              <div className="absolute top-0 left-0 right-0 z-10 bg-yellow-500/10 border-b border-yellow-500/20 px-4 py-2">
+                <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-300">
+                  <WifiOff className="h-4 w-4" />
+                  <span className="text-sm">
+                    You're offline. Messages will be queued and sent when connection is restored.
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Messages Container with scroll ref */}
+            <div
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto"
+              role="log"
+              aria-live="polite"
+              aria-label="Chat messages"
+            >
+              <div className="flex flex-col h-full">
+                {/* Load More Button */}
+                {hasMoreMessages && (
+                  <div className="p-2 text-center">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => loadMessages(Math.floor(messages.length / MESSAGES_PER_PAGE), true)}
+                      disabled={isLoadingMore}
+                      className="text-xs"
+                    >
+                      {isLoadingMore ? "Loading..." : "Load More Messages"}
+                    </Button>
+                  </div>
+                )}
+
+                {/* Message List */}
+                <div className="flex-1">
+                  <MessageList messages={messages} currentUsername={username} />
+                </div>
+
+                {/* Typing Indicator */}
+                <div className="shrink-0">
+                  <TypingIndicator typingUsers={memoizedTypingUsers} />
+                </div>
+
+                {/* Scroll Anchor */}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
           </Card>
-          <MessageInput onSend={handleSendMessage} onTyping={handleTyping} />
+
+          {/* Message Input */}
+          <MessageInput
+            onSend={handleSendMessage}
+            onTyping={handleTyping}
+            disabled={!isOnline}
+          />
         </div>
 
         {/* Users Sidebar */}
         {showUsers && (
           <div className="w-64 p-4 hidden md:block">
-            <UsersList participants={participants} />
+            <UsersList participants={memoizedParticipants} />
           </div>
         )}
       </div>
