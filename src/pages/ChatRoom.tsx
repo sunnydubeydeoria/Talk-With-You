@@ -193,27 +193,271 @@ const ChatRoom = () => {
     }
   }, [roomId, loadMessages, toast]);
 
+  // Optimized real-time subscriptions
+  const subscribeToMessages = useCallback(() => {
+    if (!roomId) return;
+
+    const channel = supabase
+      .channel(`messages:${roomId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          const newMessage = payload.new as Message;
+
+          // Deduplicate incoming message
+          setMessageIds(prev => {
+            if (prev.has(newMessage.id)) return prev;
+            const newSet = new Set(prev);
+            newSet.add(newMessage.id);
+            return newSet;
+          });
+
+          setMessages(prev => [...prev, newMessage]);
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Messages channel subscribed');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Messages channel error');
+        }
+      });
+
+    return channel;
+  }, [roomId]);
+
+  const subscribeToParticipants = useCallback(() => {
+    if (!roomId) return;
+
+    const channel = supabase
+      .channel(`participants:${roomId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "room_participants",
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT") {
+            setParticipants(prev => [...prev, payload.new as Participant]);
+          } else if (payload.eventType === "DELETE") {
+            setParticipants(prev =>
+              prev.filter((p) => p.id !== (payload.old as Participant).id)
+            );
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Participants channel subscribed');
+        }
+      });
+
+    return channel;
+  }, [roomId]);
+
+  const subscribeToTyping = useCallback(() => {
+    if (!roomId) return;
+
+    const channel = supabase
+      .channel(`typing:${roomId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "typing_indicators",
+          filter: `room_id=eq.${roomId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+            const indicator = payload.new as { username: string; is_typing: boolean };
+            if (indicator.is_typing && indicator.username !== username) {
+              setTypingUsers(prev => {
+                const exists = prev.find(u => u.username === indicator.username);
+                if (!exists) return [...prev, { username: indicator.username }];
+                return prev;
+              });
+            } else {
+              setTypingUsers(prev =>
+                prev.filter(u => u.username !== indicator.username)
+              );
+            }
+          } else if (payload.eventType === "DELETE") {
+            const indicator = payload.old as { username: string };
+            setTypingUsers(prev =>
+              prev.filter(u => u.username !== indicator.username)
+            );
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Typing channel subscribed');
+        }
+      });
+
+    return channel;
+  }, [roomId, username]);
+
+  // Optimized message sending with offline queue
+  const handleSendMessage = useCallback(async (content: string) => {
+    if (!roomId || !username) return;
+
+    const messageData = {
+      room_id: roomId,
+      username,
+      content,
+      created_at: new Date().toISOString()
+    };
+
+    // If online, send immediately
+    if (isOnline) {
+      try {
+        const { error } = await withRetry(async () => {
+          return await supabase.from("messages").insert(messageData);
+        });
+
+        if (error) throw error;
+      } catch (error) {
+        console.error('Failed to send message:', error);
+
+        // Add to offline queue if send fails
+        const offlineQueue = JSON.parse(localStorage.getItem(OFFLINE_MESSAGE_QUEUE_KEY) || '[]');
+        offlineQueue.push({ ...messageData, id: crypto.randomUUID() });
+        localStorage.setItem(OFFLINE_MESSAGE_QUEUE_KEY, JSON.stringify(offlineQueue));
+
+        toast({
+          title: "Message Queued",
+          description: "Message will be sent when connection is restored",
+        });
+      }
+    } else {
+      // Add to offline queue
+      const offlineQueue = JSON.parse(localStorage.getItem(OFFLINE_MESSAGE_QUEUE_KEY) || '[]');
+      offlineQueue.push({ ...messageData, id: crypto.randomUUID() });
+      localStorage.setItem(OFFLINE_MESSAGE_QUEUE_KEY, JSON.stringify(offlineQueue));
+
+      toast({
+        title: "Message Queued",
+        description: "Message will be sent when connection is restored",
+      });
+    }
+  }, [roomId, username, isOnline, toast]);
+
+  // Process offline message queue
+  const processOfflineQueue = useCallback(async () => {
+    if (!isOnline || !roomId || !username) return;
+
+    const offlineQueue = JSON.parse(localStorage.getItem(OFFLINE_MESSAGE_QUEUE_KEY) || '[]');
+    if (offlineQueue.length === 0) return;
+
+    try {
+      for (const message of offlineQueue) {
+        await supabase.from("messages").insert({
+          room_id: roomId,
+          username,
+          content: message.content,
+        });
+      }
+
+      // Clear queue after successful sending
+      localStorage.removeItem(OFFLINE_MESSAGE_QUEUE_KEY);
+
+      toast({
+        title: "Messages Sent",
+        description: `${offlineQueue.length} offline message(s) sent successfully`,
+      });
+
+      // Reload messages to get the sent ones
+      await loadRoomData();
+    } catch (error) {
+      console.error('Failed to process offline queue:', error);
+    }
+  }, [isOnline, roomId, username, toast, loadRoomData]);
+
+  // Enhanced effect hooks with proper cleanup
   useEffect(() => {
     if (!username || !roomId) {
       navigate("/");
       return;
     }
 
-    loadRoomData();
-    subscribeToMessages();
-    subscribeToParticipants();
-    subscribeToTyping();
+    // Check connection and add participant
+    checkConnection().then(healthy => {
+      if (healthy) {
+        addParticipant();
+        loadRoomData();
+      }
+    });
+
+    // Set up subscriptions
+    const messagesChannel = subscribeToMessages();
+    const participantsChannel = subscribeToParticipants();
+    const typingChannel = subscribeToTyping();
+
+    subscriptionRef.current = {
+      messages: messagesChannel,
+      participants: participantsChannel,
+      typing: typingChannel,
+    };
+
+    // Monitor connection status
+    const handleOnline = () => {
+      setIsOnline(true);
+      processOfflineQueue();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Periodic connection check
+    const connectionCheckInterval = setInterval(() => {
+      checkConnection();
+    }, 30000); // Check every 30 seconds
 
     return () => {
-      // Cleanup: Remove participant when leaving
+      // Cleanup timeouts
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      if (connectionRetryTimeoutRef.current) {
+        clearTimeout(connectionRetryTimeoutRef.current);
+      }
+      clearInterval(connectionCheckInterval);
+
+      // Cleanup subscriptions
+      if (subscriptionRef.current) {
+        Object.values(subscriptionRef.current).forEach(channel => {
+          if (channel) supabase.removeChannel(channel);
+        });
+      }
+
+      // Remove participant when leaving
       if (roomId && username) {
         supabase
           .from("room_participants")
           .delete()
-          .match({ room_id: roomId, username });
+          .match({ room_id: roomId, username })
+          .then(() => console.log('Participant removed'));
       }
+
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
-  }, [roomId, username, navigate]);
+  }, [roomId, username, navigate, checkConnection, addParticipant, loadRoomData, subscribeToMessages, subscribeToParticipants, subscribeToTyping, processOfflineQueue]);
 
   useEffect(() => {
     scrollToBottom();
