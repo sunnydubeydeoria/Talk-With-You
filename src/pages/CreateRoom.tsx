@@ -8,6 +8,7 @@ import { ArrowLeft, MessageSquare } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { getSafeErrorMessage } from "@/lib/errors";
 
 const createRoomSchema = z.object({
   username: z.string().trim().min(2, "Username must be at least 2 characters").max(20, "Username must be less than 20 characters"),
@@ -68,7 +69,7 @@ const CreateRoom = () => {
       console.error("Error creating room:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create room",
+        description: getSafeErrorMessage(error, "Failed to create room"),
         variant: "destructive",
       });
     } finally {
