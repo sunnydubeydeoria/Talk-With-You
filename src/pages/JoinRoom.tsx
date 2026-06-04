@@ -8,6 +8,7 @@ import { ArrowLeft, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import { getSafeErrorMessage } from "@/lib/errors";
 
 const joinRoomSchema = z.object({
   username: z.string().trim().min(2, "Username must be at least 2 characters").max(20, "Username must be less than 20 characters"),
@@ -88,7 +89,7 @@ const JoinRoom = () => {
       console.error("Error joining room:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to join room",
+        description: getSafeErrorMessage(error, "Failed to join room"),
         variant: "destructive",
       });
     } finally {

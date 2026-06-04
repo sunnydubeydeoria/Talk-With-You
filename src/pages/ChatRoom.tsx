@@ -9,6 +9,7 @@ import MessageList from "@/components/chat/MessageList";
 import MessageInput from "@/components/chat/MessageInput";
 import UsersList from "@/components/chat/UsersList";
 import TypingIndicator from "@/components/chat/TypingIndicator";
+import { getSafeErrorMessage } from "@/lib/errors";
 
 interface Message {
   id: string;
@@ -42,7 +43,7 @@ const ChatRoom = () => {
   const [showUsers, setShowUsers] = useState(true);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!username || !roomId) {
@@ -203,9 +204,10 @@ const ChatRoom = () => {
       .insert({ room_id: roomId, username, content });
 
     if (error) {
+      console.error("Error sending message:", error);
       toast({
         title: "Error",
-        description: "Failed to send message",
+        description: getSafeErrorMessage(error, "Failed to send message"),
         variant: "destructive",
       });
     }
